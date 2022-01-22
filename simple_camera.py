@@ -157,7 +157,7 @@ def plane(size):
     """
     u = np.repeat(np.linspace(-size, size, 2), 2)
     v = np.tile([-size, size], 2)
-    w = np.ones(4) * -4
+    w = np.ones(4) * -15
     return np.concatenate([np.dstack([u, v, w]), np.dstack([v, u, w])])
 
 
@@ -212,34 +212,42 @@ class PerspectiveProjection(Example):
             vertex_shader="""
                 #version 330
 
+                // model view projection matrix of the model (virtual camera)
                 uniform mat4 modelMatrix;
                 uniform mat4 viewMatrix;
                 uniform mat4 projectionMatrix;
 
+                // view and camera/projection matrix for one shot:
+                uniform mat4 shotViewMatrix;
+                uniform mat4 shotProjectionMatrix;
+
                 in vec3 in_vert;
                 out vec4 wpos;
+                out vec4 shotUV;
 
                 void main() {
                     wpos = modelMatrix * vec4(in_vert, 1.0);
                     gl_Position = projectionMatrix * viewMatrix * wpos;
+
+                    shotUV = shotProjectionMatrix * shotViewMatrix * wpos;
                 }
             """,
             fragment_shader="""
                 #version 330
 
-                uniform mat4 shotViewMatrix;
-                uniform mat4 shotProjectionMatrix;
+
                 uniform sampler2D shotTexture;
 
                 in vec4 wpos;
+                in vec4 shotUV;
                 out vec4 color;
 
                 void main() {
-                    vec4 uv = shotProjectionMatrix * shotViewMatrix * wpos;
-                    uv = vec4(uv.xyz / uv.w / 2.0 + .5, 1.0); // perspective division and converstion to [0,1]
+                    vec4 uv = shotUV;
+                    uv = vec4(uv.xyz / uv.w / 2.0 + .5, 1.0); // perspective division and conversion to [0,1] from NDC
 
                     if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-                        discard;
+                        discard; // throw away the fragment 
                         color = vec4(0.0, 0.0, 0.0, 0.0);
                     } else {
                         color = vec4(texture(shotTexture, uv.xy).rgb, 1.0);
