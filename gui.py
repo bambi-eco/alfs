@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import cv2  # opencv
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt, QSize, QEvent, Signal, QObject, QPointF
 from PySide6.QtGui import (
     QImage,
     QPixmap,
@@ -26,14 +26,17 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QTabWidget,
 )
-
-from alfr.shot import Shot
-from alfr.renderer import Renderer
-from alfr.camera import Camera
+import alfr
+from alfr import Shot, Renderer, Camera
+from alfr.shot import load_shots_from_json
 
 
 # https://stackoverflow.com/questions/41688668/how-to-return-mouse-coordinates-in-realtime
 class MouseTracker(QLabel):
+    rotateEvent = Signal(QPointF)
+    panEvent = Signal(QPointF)
+    zoomEvent = Signal(QPointF)
+
     def __init__(self):
         super().__init__()
         self.setMouseTracking(
@@ -46,6 +49,21 @@ class MouseTracker(QLabel):
         # self.initUI()
         # self.setMouseTracking(True)
 
+        self._lastpos = QPointF(0, 0)
+
+        # only for testing:
+        self.rotateEvent.connect(lambda dxy: print("rotateEvent", dxy))
+        self.panEvent.connect(lambda dxy: print("panEvent", dxy))
+        self.zoomEvent.connect(lambda dxy: print("zoomEvnent", dxy))
+
+    @property
+    def lastpos(self) -> QPointF:
+        return self._lastpos
+
+    @lastpos.setter
+    def lastpos(self, value: QPointF):
+        self._lastpos = value
+
     def initUI(self):
         self.setGeometry(300, 300, 300, 200)
         self.setWindowTitle("Mouse Tracker")
@@ -53,17 +71,40 @@ class MouseTracker(QLabel):
         self.label.resize(200, 40)
         self.show()
 
-    def mouseMoveEvent(self, event):
-        print("Mouse coords: ( %d : %d )" % (event.x(), event.y()))
-        print(event.flags())
-        print(event.buttons())
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+
+        currpos = event.position()
+        dxy = currpos - self.lastpos
+
+        if event.buttons() == Qt.LeftButton:
+            print("Mouse move mit left button at: ( %d : %d )" % (event.x(), event.y()))
+            # Todo rotate
+            self.rotateEvent.emit(dxy)
+
+        elif event.buttons() == Qt.RightButton:
+            print(
+                "Mouse move with right button at: ( %d : %d )" % (event.x(), event.y())
+            )
+            # Todo pan
+            self.panEvent.emit(dxy)
+
+        elif event.buttons() == Qt.MiddleButton:
+            print(
+                "Mouse move with middle button at: ( %d : %d )" % (event.x(), event.y())
+            )
+            # Todo zoom
+            self.zoomEvent.emit(dxy)
+
+        # update last position
+        self.lastpos = currpos
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        print("Mouse pressed at: ( %d : %d )" % (event.x(), event.y()))
+        # print("Mouse pressed at: ( %d : %d )" % (event.x(), event.y()))
+        self.lastpos = event.position()
         return super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        print("Mouse released at: ( %d : %d )" % (event.x(), event.y()))
+        # print("Mouse released at: ( %d : %d )" % (event.x(), event.y()))
         return super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -169,6 +210,10 @@ class QImageViewer(QMainWindow):
                 shot_fovy_degrees=60.0,
             ),
         ]
+
+        shots = alfr.load_shots_from_json(
+            r"data\debug_scene\blender_poses.json", fovy=60.0
+        )
 
         for i, shot in enumerate(shots):
 
