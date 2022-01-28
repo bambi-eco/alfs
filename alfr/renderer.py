@@ -5,6 +5,7 @@ import alfr.globals as g
 from alfr.shot import Shot
 from typing import Tuple
 from pyrr import Matrix44, Quaternion, Vector3, vector
+from typing import List
 
 
 def plane(size):
@@ -39,18 +40,13 @@ class Renderer:
         ]
         self._vao = self._ctx.vertex_array(self._program, vao_content, ibo)
 
-    def project_shot(
-        self, shot: Shot, vcam: dict, focus=None, resolution=None
-    ) -> np.ndarray:
-        """
-        Project the given camera into a given shot.
-        """
+    def _prepare_projection(self, vcam: dict, focus=None, resolution: tuple = None):
 
         if resolution is not None and resolution != self._fbo.size:
             self.fbo = self._ctx.simple_framebuffer(resolution, components=4)
         self.fbo.use()
 
-        self._ctx.clear(1.0, 1.0, 1.0)
+        self._ctx.clear(0.0, 0.0, 0.0)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
         modelMat = self._program["modelMatrix"]
@@ -61,21 +57,76 @@ class Renderer:
         viewMat.write((vcam["mat_lookat"]).astype("f4"))
         modelMat.write((Matrix44.identity()).astype("f4"))
 
-        shot.use(self)
-        self._vao.render(moderngl.TRIANGLES)
-
+    def _img_from_fbo(self) -> np.ndarray:
         # opencv image
         # see https://stackoverflow.com/questions/65056007/numpy-array-to-and-from-moderngl-buffer-open-and-save-with-cv2
         raw = self.fbo.read(components=4, dtype="f1")
-        img = np.frombuffer(raw, dtype="uint8").reshape((*self.fbo.size[1::-1], 4))
+        return np.frombuffer(raw, dtype="uint8").reshape((*self.fbo.size[1::-1], 4))
+
+    def _postpro_img(self, img):
         # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # convert to RGB, opencv uses BGR
         img = np.flip(img, 0).copy(order="C")  # flip image vertically
-
         # flip red and blue channels; cvtColor removes alpha channel so do it manually!
         tmp = img[:, :, 0].copy()
         img[:, :, 0] = img[:, :, 2].copy()
         img[:, :, 2] = tmp
         return img
+
+    def project_shot(
+        self, shot: Shot, vcam: dict, focus=None, resolution=None
+    ) -> np.ndarray:
+        """
+        Project the given camera into a given shot.
+        """
+
+        self._prepare_projection(vcam, focus, resolution)
+
+        self._ctx.clear(0.0, 0.0, 0.0)
+        shot.use(self)
+        self._vao.render(moderngl.TRIANGLES)
+
+        img = self._img_from_fbo()
+        return self._postpro_img(img)
+
+    def project_multiple_shots(
+        self,
+        shots: List[Shot],
+        vcam: dict,
+        focus=None,
+        resolution=None,
+        postprocess=True,
+    ) -> List[np.ndarray]:
+        """
+        Project multiple shots into images.
+        """
+        projections = []
+        self._prepare_projection(vcam, focus, resolution)
+
+        for shot in shots:
+            self._ctx.clear(0.0, 0.0, 0.0)
+            shot.use(self)
+            self._vao.render(moderngl.TRIANGLES)
+
+            img = self._img_from_fbo()
+            projections.append(self._postpro_img(img) if postprocess else img)
+
+        return projections
+
+    def integrate(
+        self, shots: List[Shot], vcam: dict, focus=None, resolution: tuple = None
+    ) -> np.ndarray:
+        """
+        Integrate multiple shots into a single image.
+        """
+        projections = self.project_multiple_shots(
+            shots, vcam, focus, resolution, postprocess=False
+        )
+
+        integral = np.stack(projections, axis=-1).sum(axis=-1)
+        integral = self._postpro_img(integral)  # postprocess only once!
+        alpha = integral[:, :, -1] / 255.0
+        integral = np.divide(integral, alpha[:, :, np.newaxis])
+        return integral
 
     @property
     def fbo(self):
