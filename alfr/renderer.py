@@ -3,6 +3,7 @@ import cv2
 import moderngl
 import alfr.globals as g
 from alfr.shot import Shot
+from alfr.camera import Camera
 from typing import Tuple
 from pyrr import Matrix44, Quaternion, Vector3, vector
 from typing import List
@@ -19,11 +20,11 @@ def plane(size):
 
 
 class Renderer:
-    def __init__(self, resolution: tuple = (512, 512)):
+    def __init__(self, resolution: tuple = (512, 512), ctx: moderngl.Context = g.ctx):
         # g.ctx
-        if g.ctx is None:
-            g.ctx = moderngl.create_context(standalone=True)
-        self._ctx = g.ctx
+        # if g.ctx is None:
+        #    g.ctx = moderngl.create_context(standalone=True)
+        self._ctx = ctx
 
         # Todo: test on Colab and so forth
 
@@ -40,7 +41,7 @@ class Renderer:
         ]
         self._vao = self._ctx.vertex_array(self._program, vao_content, ibo)
 
-    def _prepare_projection(self, vcam: dict, focus=None, resolution: tuple = None):
+    def _prepare_projection(self, vcam: Camera, focus=None, resolution: tuple = None):
 
         if resolution is not None and resolution != self._fbo.size:
             self.fbo = self._ctx.simple_framebuffer(resolution, components=4)
@@ -53,9 +54,9 @@ class Renderer:
         viewMat = self._program["viewMatrix"]
         projMat = self._program["projectionMatrix"]
 
-        projMat.write((vcam["mat_projection"]).astype("f4"))
-        viewMat.write((vcam["mat_lookat"]).astype("f4"))
-        modelMat.write((Matrix44.identity()).astype("f4"))
+        projMat.write(vcam.projection_matrix.astype("f4"))
+        viewMat.write(vcam.view_matrix.astype("f4"))
+        modelMat.write((Matrix44.identity()).astype("f4"))  # Todo!
 
     def _img_from_fbo(self) -> np.ndarray:
         # opencv image
@@ -73,7 +74,7 @@ class Renderer:
         return img
 
     def project_shot(
-        self, shot: Shot, vcam: dict, focus=None, resolution=None
+        self, shot: Shot, vcam: Camera, focus=None, resolution=None
     ) -> np.ndarray:
         """
         Project the given camera into a given shot.
@@ -91,7 +92,7 @@ class Renderer:
     def project_multiple_shots(
         self,
         shots: List[Shot],
-        vcam: dict,
+        vcam: Camera,
         focus=None,
         resolution=None,
         postprocess=True,
@@ -113,7 +114,7 @@ class Renderer:
         return projections
 
     def integrate(
-        self, shots: List[Shot], vcam: dict, focus=None, resolution: tuple = None
+        self, shots: List[Shot], vcam: Camera, focus=None, resolution: tuple = None
     ) -> np.ndarray:
         """
         Integrate multiple shots into a single image.

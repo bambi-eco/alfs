@@ -2,7 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import cv2  # opencv
-from PySide6.QtCore import Qt, QSize, QEvent, Signal, QObject, QPointF
+import moderngl
+import numpy as np
+from PySide6.QtCore import (
+    Qt,
+    QSize,
+    QEvent,
+    Signal,
+    QObject,
+    QPointF,
+    QRunnable,
+    QWaitCondition,
+    QThreadPool,
+    QThread,
+)
 from PySide6.QtGui import (
     QImage,
     QPixmap,
@@ -29,6 +42,58 @@ from PySide6.QtWidgets import (
 import alfr
 from alfr import Shot, Renderer, Camera
 from alfr.shot import load_shots_from_json
+from typing import Tuple
+
+
+class RendererThread(QObject):
+    shotsLoaded = Signal(list)
+    renderingDone = Signal(QImage)
+    # zoomEvent = Signal(QPointF)
+    def __init__(
+        self,
+        image_label: QLabel,
+        file_name: str,
+        resolution: Tuple[int, int] = (512, 512),
+    ):
+        super().__init__()
+
+        self._file_name = file_name
+        self._image_label = image_label
+        self._resolution = resolution
+
+        # only for testing:
+        self._image_label.rotateEvent.connect(
+            lambda dxy: print("RT rotateEvent; shots: ", len(self._shots))
+        )
+        self._image_label.panEvent.connect(lambda dxy: print("RT panEvent", dxy))
+        self._image_label.zoomEvent.connect(lambda dxy: print("RT zoomEvent", dxy))
+
+        self.shotsLoaded.connect(lambda s: print(f"RT shots loaded {s}"))
+        self.renderingDone.connect(lambda img: print(f"RT rendering done loaded {img}"))
+
+    def run(self):
+        self._ctx = moderngl.create_standalone_context()
+        self._renderer = alfr.Renderer(resolution=self._resolution, ctx=self._ctx)
+        self._camera = alfr.Camera()
+
+        self._shots = alfr.load_shots_from_json(
+            self._file_name, fovy=60.0, ctx=self._ctx
+        )
+        self.shotsLoaded.emit(self._shots)
+
+        img = self._renderer.integrate(shots=self._shots, vcam=self._camera)
+        # img = self._renderer.project_shot(self._shots[0], vcam)
+
+        # convert to uint8 and only use 3 channels (RGB)
+        img = img[:, :, :3].astype("uint8")
+        image = QImage(
+            img.data, img.shape[1], img.shape[0], QImage.Format_RGB888
+        ).rgbSwapped()
+        self.renderingDone.emit(image)
+        # self._image_label.setPixmap(QPixmap.fromImage(image))
+        # self._image_label.adjustSize()
+
+        return
 
 
 # https://stackoverflow.com/questions/41688668/how-to-return-mouse-coordinates-in-realtime
@@ -64,12 +129,11 @@ class MouseTracker(QLabel):
     def lastpos(self, value: QPointF):
         self._lastpos = value
 
-    def initUI(self):
-        self.setGeometry(300, 300, 300, 200)
-        self.setWindowTitle("Mouse Tracker")
-        self.label = QLabel(self)
-        self.label.resize(200, 40)
-        self.show()
+    def set_image(self, image: QImage):
+        self.setPixmap(QPixmap.fromImage(image))
+        self.setMinimumSize(image.size())
+        self.setMaximumSize(image.size())
+        # self._image_label.adjustSize()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
 
@@ -113,6 +177,9 @@ class MouseTracker(QLabel):
 
 
 class QImageViewer(QMainWindow):
+
+    _thread = None
+
     def __init__(self):
         super().__init__()
 
@@ -152,8 +219,38 @@ class QImageViewer(QMainWindow):
         self.setWindowTitle("Image Viewer")
         self.resize(800, 600)
 
-    def dblClick():
-        print("double click")
+        self.init_render_thread()
+
+    def finish_render_thread(self):
+
+        if self._thread:
+            self._thread.exit(0)
+            self._thread.terminate()
+            print("thread exit!")
+            # self._thread.quit()
+            del self._rt
+            del self._thread
+            print("thread and rt deleted!")
+            self._thread, self._rt = None, None
+            print("thread and rt are None!")
+
+    def init_render_thread(self, file_name=r"data\debug_scene\blender_poses.json"):
+        # self._pool = QThreadPool.globalInstance()
+        # self._rt = RendererThread(self.imageLabel, r"data\debug_scene\blender_poses.json")
+        # print("start render thread")
+        # self._pool.start(self._rt)
+
+        self._thread = QThread()
+        self._rt = RendererThread(self.imageLabel, file_name)
+        self._rt.moveToThread(self._thread)
+        self._thread.started.connect(self._rt.run)
+
+        # self._rt.finished.connect(lambda : print("_rt finished!"))
+        self._thread.finished.connect(lambda x: print("_thread finished", x))
+
+        self._rt.renderingDone.connect(self.imageLabel.set_image)
+
+        self._thread.start()
 
     def open_QImage(self):
         options = QFileDialog.Options()
@@ -174,71 +271,37 @@ class QImageViewer(QMainWindow):
                 return
 
             self.imageLabel.setPixmap(QPixmap.fromImage(image))
-            self.scaleFactor = 1.0
+            # self.scaleFactor = 1.0
 
             # self.scrollArea.setVisible(True)
-            self.printAct.setEnabled(True)
-            self.fitToWindowAct.setEnabled(True)
-            self.updateActions()
+            # self.printAct.setEnabled(True)
+            # self.fitToWindowAct.setEnabled(True)
+            # self.updateActions()
 
-            if not self.fitToWindowAct.isChecked():
-                self.imageLabel.adjustSize()
+            # if not self.fitToWindowAct.isChecked():
+            #    self.imageLabel.adjustSize()
 
-    def open_cv2(self):
-        # headless:
-        renderer = Renderer((1024, 1024))
-        camera = Camera(1.0)
-
-        # perspectives of the light field
-        shots = [
-            Shot(
-                r"data\debug_scene\0000.png",
-                [0, 0, 0],
-                [0, 0, 0, 1],
-                shot_fovy_degrees=60.0,
-            ),
-            Shot(
-                r"data\debug_scene\0001.png",
-                [0.2, 0, 0],
-                [0, 0, 0, 1],
-                shot_fovy_degrees=60.0,
-            ),
-            Shot(
-                r"data\debug_scene\0014.png",
-                [1.0, -1.0, 1.0],
-                [0.13052618503570557, 0.0, 0.0, 0.9914448857307434],
-                shot_fovy_degrees=60.0,
-            ),
-        ]
-
-        shots = alfr.load_shots_from_json(
-            r"data\debug_scene\blender_poses.json", fovy=60.0
+    def open_json(self):
+        options = QFileDialog.Options()
+        # fileName = QFileDialog.getOpenFileName(self, "Open File", QDir.currentPath())
+        fileName, _ = QFileDialog.getOpenFileName(
+            self,
+            "QFileDialog.getOpenFileName()",
+            "",
+            "JSON (*.json)",
+            options=options,
         )
+        if fileName:
+            if not os.path.isfile(fileName):
+                QMessageBox.information(
+                    self, "Light-Field Viewer", "Cannot load %s." % fileName
+                )
+                return
+        else:
+            return
 
-        for i, shot in enumerate(shots):
-
-            vcam = {
-                "mat_projection": (camera.mat_projection),
-                "mat_lookat": (camera.mat_lookat),
-            }
-
-            img = renderer.project_shot(shot, vcam)
-
-        # convert to uint8 and only use 3 channels (RGB)
-        img = img[:, :, :3].astype("uint8")
-        image = QImage(
-            img.data, img.shape[1], img.shape[0], QImage.Format_RGB888
-        ).rgbSwapped()
-        self.imageLabel.setPixmap(QPixmap.fromImage(image))
-        self.scaleFactor = 1.0
-
-        # self.scrollArea.setVisible(True)
-        self.printAct.setEnabled(True)
-        self.fitToWindowAct.setEnabled(True)
-        self.updateActions()
-
-        if not self.fitToWindowAct.isChecked():
-            self.imageLabel.adjustSize()
+        self.finish_render_thread()
+        self.init_render_thread(fileName)
 
     def open_cv2_old(self):
         options = QFileDialog.Options()
@@ -323,7 +386,7 @@ class QImageViewer(QMainWindow):
 
     def createActions(self):
         self.openAct = QAction(
-            "&Open...", self, shortcut="Ctrl+O", triggered=self.open_cv2
+            "&Open...", self, shortcut="Ctrl+O", triggered=self.open_json
         )
         self.printAct = QAction(
             "&Print...", self, shortcut="Ctrl+P", enabled=False, triggered=self.print_
@@ -414,7 +477,7 @@ if __name__ == "__main__":
     # app.setAttribute(Qt.AA_EnableHighDpiScaling)
     imageViewer = QImageViewer()
     imageViewer.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
     # TODO QScrollArea support mouse
     # base on https://github.com/baoboa/pyqt5/blob/master/examples/widgets/imageviewer.py
     #

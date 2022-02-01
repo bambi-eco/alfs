@@ -2,12 +2,16 @@ import numpy as np
 import cv2
 import moderngl
 import alfr.globals as g
+from alfr.camera import Camera
 from pyrr import Matrix44, Quaternion, Vector3, vector
 import json
 import os
+from typing import Union
 
 
-def load_shots_from_json(json_file: str, fovy: float = 60.0):
+def load_shots_from_json(
+        json_file: str, fovy: float = 60.0, ctx: moderngl.Context = g.ctx
+):
     """
     Loads shots from a json file.
     """
@@ -22,9 +26,11 @@ def load_shots_from_json(json_file: str, fovy: float = 60.0):
                 file, pos, rot, fov = get_file_pos_rot(image)
                 shot = Shot(
                     os.path.join(json_dir, file),
-                    pos,
-                    rot,
+                    Vector3(pos),
+                    Quaternion(rot),
                     fov if fov is not None else fovy,
+                    shot_aspect_ratio=1.0,
+                    ctx=ctx,
                 )
                 shots.append(shot)
 
@@ -39,7 +45,6 @@ def get_from_dict(d: dict, keys: list):
 
 
 def get_file_pos_rot(images: dict):
-
     file = get_from_dict(images, ["imagefile", "file", "image"])
     pos = get_from_dict(images, ["location", "pos", "loc"])
     rot = get_from_dict(images, ["rotation", "rot", "quaternion"])
@@ -51,18 +56,27 @@ def get_file_pos_rot(images: dict):
     return file, pos, rot, fov
 
 
-class Shot:
+class Shot(Camera):
     """One perspective of the light field"""
 
     def __init__(
-        self,
-        shot_filename,
-        shot_position,
-        shot_rotation,
-        shot_fovy_degrees=60.0,
+            self,
+            shot_filename: Union[str, np.ndarray],
+            shot_position: Vector3,
+            shot_rotation: Quaternion,
+            shot_fovy_degrees: float = 60.0,
+            shot_aspect_ratio: float = 1.0,
+            ctx: moderngl.Context = g.ctx,
     ):
+        super().__init__(
+            field_of_view_degrees=shot_fovy_degrees,
+            ratio=shot_aspect_ratio,
+            position=shot_position,
+            quaternion=shot_rotation,
+        )
+
         # global g.ctx
-        if g.ctx is None:
+        if ctx is None:
             raise RuntimeError("No OpenGL context available!")
 
         # one perspective of the light field
@@ -74,12 +88,7 @@ class Shot:
             img = shot_filename
         else:
             raise Exception("Unknown type for {shot_filename}")
-        self.texture = g.ctx.texture(img.shape[1::-1], img.shape[2], img)
-
-        self.pos = np.array(shot_position)
-        self.rot = np.array(shot_rotation)  # rotation as quaternion
-
-        self.fovy = shot_fovy_degrees
+        self.texture = ctx.texture(img.shape[1::-1], img.shape[2], img)
 
     def _load_image(self, texture_filename) -> np.ndarray:
         img = cv2.imread(texture_filename)
@@ -98,11 +107,8 @@ class Shot:
         self.shotProjMat = renderer.program["shotProjectionMatrix"]
 
         self.shotProjMat.write(
-            (Matrix44.perspective_projection(self.fovy, 1.0, 0.01, 100.0)).astype("f4")
+            self.projection_matrix.astype("f4")
         )
         self.shotViewMat.write(
-            (
-                Matrix44.from_quaternion(self.rot)
-                * Matrix44.from_translation(-self.pos)
-            ).astype("f4")
+            self.view_matrix.astype("f4")
         )

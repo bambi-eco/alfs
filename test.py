@@ -12,36 +12,12 @@ import time
 
 # headless:
 renderer = alfr.Renderer((512, 512))
-camera = alfr.Camera(1.0)
+camera = alfr.Camera(position=[0,1,0],camera_front=[0,0,-1],camera_up=[0,-1,0])
 
-# perspectives of the light field
-shots = [
-    alfr.Shot(
-        r"data\debug_scene\0000.png",
-        [0, 0, 0],
-        [0, 0, 0, 1],
-        shot_fovy_degrees=60.0,
-    ),
-    alfr.Shot(
-        r"data\debug_scene\0001.png",
-        [0.2, 0, 0],
-        [0, 0, 0, 1],
-        shot_fovy_degrees=60.0,
-    ),
-    alfr.Shot(
-        r"data\debug_scene\0014.png",
-        [1.0, -1.0, 1.0],
-        [0.13052618503570557, 0.0, 0.0, 0.9914448857307434],
-        shot_fovy_degrees=60.0,
-    ),
-]
-
+# load perspectives of the light field
 shots = alfr.load_shots_from_json(r"data\debug_scene\blender_poses.json", fovy=60.0)
 
-vcam = {
-    "mat_projection": (camera.mat_projection),
-    "mat_lookat": (camera.mat_lookat),
-}
+vcam = camera
 
 for i, shot in enumerate(shots):
 
