@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import moderngl
-import alfr.globals as g
+from alfr.globals import ContextManager
 from alfr.camera import Camera
 from pyrr import Matrix44, Quaternion, Vector3, vector
 import json
@@ -10,7 +10,9 @@ from typing import Union
 
 
 def load_shots_from_json(
-        json_file: str, fovy: float = 60.0, ctx: moderngl.Context = g.ctx
+    json_file: str,
+    fovy: float = 60.0,
+    ctx: moderngl.Context = ContextManager.get_default_context(),
 ):
     """
     Loads shots from a json file.
@@ -60,13 +62,13 @@ class Shot(Camera):
     """One perspective of the light field"""
 
     def __init__(
-            self,
-            shot_filename: Union[str, np.ndarray],
-            shot_position: Vector3,
-            shot_rotation: Quaternion,
-            shot_fovy_degrees: float = 60.0,
-            shot_aspect_ratio: float = 1.0,
-            ctx: moderngl.Context = g.ctx,
+        self,
+        shot_filename: Union[str, np.ndarray],
+        shot_position: Vector3,
+        shot_rotation: Quaternion,
+        shot_fovy_degrees: float = 60.0,
+        shot_aspect_ratio: float = 1.0,
+        ctx: moderngl.Context = ContextManager.get_default_context(),
     ):
         super().__init__(
             field_of_view_degrees=shot_fovy_degrees,
@@ -106,9 +108,5 @@ class Shot(Camera):
         self.shotViewMat = renderer.program["shotViewMatrix"]
         self.shotProjMat = renderer.program["shotProjectionMatrix"]
 
-        self.shotProjMat.write(
-            self.projection_matrix.astype("f4")
-        )
-        self.shotViewMat.write(
-            self.view_matrix.astype("f4")
-        )
+        self.shotProjMat.write(self.projection_matrix.astype("f4"))
+        self.shotViewMat.write(self.view_matrix.astype("f4"))

@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import moderngl
-import alfr.globals as g
+from alfr.globals import ContextManager
 from alfr.shot import Shot
 from alfr.camera import Camera
 from typing import Tuple
@@ -20,7 +20,11 @@ def plane(size):
 
 
 class Renderer:
-    def __init__(self, resolution: tuple = (512, 512), ctx: moderngl.Context = g.ctx):
+    def __init__(
+        self,
+        resolution: tuple = (512, 512),
+        ctx: moderngl.Context = ContextManager.get_default_context(),
+    ):
         # g.ctx
         # if g.ctx is None:
         #    g.ctx = moderngl.create_context(standalone=True)
