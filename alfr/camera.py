@@ -15,8 +15,8 @@ class Camera:
         ratio: float = 1.0,
         z_near: float = 0.1,
         z_far: float = 10000,
-        position=Vector3([0, 0, 0]),
-        quaternion=Quaternion([0,0,0,1]),
+        position=Vector3([0.0, 0.0, 0.0]),
+        quaternion=Quaternion([0.0, 0.0, 0.0, 1.0]),
         camera_front: Vector3 = None,
         camera_up: Vector3 = None,
     ):
@@ -41,11 +41,33 @@ class Camera:
 
     @property
     def position(self) -> Vector3:
+        # print("camera.position(getter):", self._camera_position)
         return self._camera_position
+
+    @position.setter
+    def position(self, position: Vector3):
+        self._camera_position = position
+        # print("camera.position(setter):", self._camera_position)
+
+    @property
+    def fov_degree(self) -> float:
+        return self._field_of_view_degrees
+
+    @fov_degree.setter
+    def fov_degree(self, fov_degree: float):
+        self._field_of_view_degrees = fov_degree
 
     @property
     def rotation(self) -> Quaternion:
         return self._rotation
+
+    @property
+    def aspect_ratio(self) -> float:
+        return self._ratio
+
+    @aspect_ratio.setter
+    def aspect_ratio(self, ratio: float):
+        self._ratio = ratio
 
     @property
     def projection_matrix(self) -> Matrix44:

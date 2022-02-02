@@ -37,12 +37,17 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QWidget,
     QHBoxLayout,
+    QVBoxLayout,
     QTabWidget,
+    QDoubleSpinBox,
 )
+
 import alfr
-from alfr import Shot, Renderer, Camera
-from alfr.shot import load_shots_from_json
-from typing import Tuple
+
+# from alfr.camera import Camera
+# from alfr.shot import load_shots_from_json
+from typing import Tuple, Union
+from pyrr import Matrix44, Quaternion, Vector3
 
 
 class RendererThread(QObject):
@@ -53,13 +58,20 @@ class RendererThread(QObject):
         self,
         image_label: QLabel,
         file_name: str,
+        camera: Union[alfr.Camera, None] = None,
         resolution: Tuple[int, int] = (512, 512),
     ):
         super().__init__()
 
+        self._terminate = False
+
         self._file_name = file_name
         self._image_label = image_label
         self._resolution = resolution
+
+        self._camera = camera
+        if self._camera is None:
+            self._camera = alfr.Camera()
 
         # only for testing:
         self._image_label.rotateEvent.connect(
@@ -71,27 +83,33 @@ class RendererThread(QObject):
         self.shotsLoaded.connect(lambda s: print(f"RT shots loaded {s}"))
         self.renderingDone.connect(lambda img: print(f"RT rendering done loaded {img}"))
 
+    @property
+    def terminate(self) -> bool:
+        return self._terminate
+
+    @terminate.setter
+    def terminate(self, value: bool):
+        self._terminate = value
+
     def run(self):
         self._ctx = moderngl.create_standalone_context()
         self._renderer = alfr.Renderer(resolution=self._resolution, ctx=self._ctx)
-        self._camera = alfr.Camera()
 
         self._shots = alfr.load_shots_from_json(
             self._file_name, fovy=60.0, ctx=self._ctx
         )
         self.shotsLoaded.emit(self._shots)
 
-        img = self._renderer.integrate(shots=self._shots, vcam=self._camera)
-        # img = self._renderer.project_shot(self._shots[0], vcam)
+        while not self._terminate:
+            img = self._renderer.integrate(shots=self._shots, vcam=self._camera)
+            # img = self._renderer.project_shot(self._shots[0], vcam)
 
-        # convert to uint8 and only use 3 channels (RGB)
-        img = img[:, :, :3].astype("uint8")
-        image = QImage(
-            img.data, img.shape[1], img.shape[0], QImage.Format_RGB888
-        ).rgbSwapped()
-        self.renderingDone.emit(image)
-        # self._image_label.setPixmap(QPixmap.fromImage(image))
-        # self._image_label.adjustSize()
+            # convert to uint8 and only use 3 channels (RGB)
+            img = img[:, :, :3].astype("uint8")
+            image = QImage(
+                img.data, img.shape[1], img.shape[0], QImage.Format_RGB888
+            ).rgbSwapped()
+            self.renderingDone.emit(image)
 
         return
 
@@ -172,13 +190,183 @@ class MouseTracker(QLabel):
         return super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent) -> None:
-        print("Mouse wheel at: ( %d : %d )" % (event.x(), event.y()))
+        # print("Mouse wheel at: ( %d : %d )" % (event.x(), event.y()))
         return super().wheelEvent(event)
+
+
+class QuaternionWidget(QWidget):
+
+    valueChanged = Signal(Quaternion)
+
+    def initQDblSpinBox(self, value: float):
+        q_spinbox = QDoubleSpinBox()
+        q_spinbox.setRange(-1, 1)
+        q_spinbox.setSingleStep(0.01)
+        q_spinbox.setDecimals(3)
+        q_spinbox.setValue(value)
+        q_spinbox.valueChanged.connect(self._update_quaternion)
+
+        self._layout.addWidget(q_spinbox)
+
+        return q_spinbox
+
+    def __init__(self, label: str, quaternion: Quaternion):
+        super().__init__()
+        self.setMinimumSize(200, 200)
+        # self.setMaximumSize(200, 200)
+        # self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self._q = quaternion
+
+        self._q_label = QLabel()
+        self._q_label.setText(f"{label}")
+
+        self._layout = QHBoxLayout()
+        self._layout.addWidget(self._q_label)
+        self._q0_spinbox = self.initQDblSpinBox(self._q[0])
+        self._q1_spinbox = self.initQDblSpinBox(self._q[1])
+        self._q2_spinbox = self.initQDblSpinBox(self._q[2])
+        self._q3_spinbox = self.initQDblSpinBox(self._q[3])
+
+        self.setLayout(self._layout)
+
+    def _update_quaternion(self, value: float):
+        # print(f"update quaternion {self._q0_spinbox.value()}")
+        self._q[0] = self._q0_spinbox.value()
+        self._q[1] = self._q1_spinbox.value()
+        self._q[2] = self._q2_spinbox.value()
+        self._q[3] = self._q3_spinbox.value()
+
+        self.valueChanged.emit(self._q)
+
+    @property
+    def quaternion(self) -> Quaternion:
+        return self._q
+
+
+class Vector3Widget(QWidget):
+    valueChanged = Signal(Vector3)
+
+    def __init__(self, label: str, vec: Vector3):
+        super().__init__()
+        self._label = label
+        self._vec = vec
+        self._initUI()
+
+    def _initUI(self):
+        # self.setWindowTitle(self._label)
+        self.setMinimumSize(200, 200)
+
+        self._layout = QHBoxLayout()
+        self._layout.addWidget(QLabel(self._label))
+
+        self._spinboxes = [
+            self.init_dbl_spinbox(self._vec.x),
+            self.init_dbl_spinbox(self._vec.y),
+            self.init_dbl_spinbox(self._vec.z),
+        ]
+
+        self.setLayout(self._layout)
+
+    def init_dbl_spinbox(self, value: float) -> QDoubleSpinBox:
+        spinbox = QDoubleSpinBox()
+        spinbox.setValue(value)
+        spinbox.setRange(-1000, 1000)
+        spinbox.valueChanged.connect(self._on_value_changed)
+
+        self._layout.addWidget(spinbox)
+
+        return spinbox
+
+    def _on_value_changed(self, value: float):
+        self._vec.x = self._spinboxes[0].value()
+        self._vec.y = self._spinboxes[1].value()
+        self._vec.z = self._spinboxes[2].value()
+        self.valueChanged.emit(self._vec)
+
+
+class CameraWidget(QWidget):
+    cameraChanged = Signal(alfr.Camera)
+
+    def __init__(self, camera: alfr.Camera):
+        super().__init__()
+        self._camera = camera
+        if self._camera is None:
+            self._camera = Camera()  # create a dummy camera
+        self.initUI()
+
+    def initUI(self):
+        self.setWindowTitle("Camera")
+        # self.setGeometry(300, 300, 300, 200)
+
+        # self.setMinimumSize(300, 200)
+        # self.setMaximumSize(300, 200)
+
+        layout = QVBoxLayout()
+        layout.setAlignment(Qt.AlignTop)
+        # position
+        pos_widget = Vector3Widget("Position", self._camera.position)
+        pos_widget.valueChanged.connect(self._on_position_changed)
+        layout.addWidget(pos_widget)
+        # rotation
+        rot_widget = QuaternionWidget("Rotation", self._camera.rotation)
+        rot_widget.valueChanged.connect(self._on_rotation_changed)
+        layout.addWidget(rot_widget)
+        # Todo: add modificators for rot x,y,z and changing the target ...
+
+        # field of view
+        fov_widget = QDoubleSpinBox()
+        fov_widget.setRange(10, 179)  # degrees
+        fov_widget.setValue(self._camera.fov_degree)
+        fov_widget.setSuffix("°")
+        fov_widget.valueChanged.connect(self._on_fov_changed)
+
+        fov_layout = QHBoxLayout()
+        fov_layout.addWidget(QLabel("FoV (y)"))
+        fov_layout.addWidget(fov_widget)
+        fov_widget = QWidget()
+        fov_widget.setLayout(fov_layout)
+        layout.addWidget(fov_widget)
+
+        # aspect ratio
+        ar_widget = QDoubleSpinBox()
+        ar_widget.setRange(0.01, 1.0)
+        ar_widget.setSingleStep(0.01)
+        ar_widget.setValue(self._camera.aspect_ratio)
+        ar_widget.valueChanged.connect(self._on_ar_changed)
+
+        ar_layout = QHBoxLayout()
+        ar_layout.addWidget(QLabel("Aspect Ratio"))
+        ar_layout.addWidget(ar_widget)
+        ar_widget = QWidget()
+        ar_widget.setLayout(ar_layout)
+        layout.addWidget(ar_widget)
+
+        self.setLayout(layout)
+
+    def _on_position_changed(self, vec: Vector3):
+        # print(f"Camera position: {self._camera.position}")
+        # print(f"Signal position: {vec}")
+        self.cameraChanged.emit(self._camera)
+
+    def _on_rotation_changed(self, q: Quaternion):
+        # print(f"Camera rotation: {self._camera.rotation}")
+        # print(f"Signal rotation: {q}")
+        self.cameraChanged.emit(self._camera)
+
+    def _on_fov_changed(self, value: float):
+        self._camera.fov_degree = value
+        self.cameraChanged.emit(self._camera)
+
+    def _on_ar_changed(self, value: float):
+        self._camera.aspect_ratio = value
+        self.cameraChanged.emit(self._camera)
 
 
 class QImageViewer(QMainWindow):
 
     _thread = None
+    _camera = alfr.Camera()
 
     def __init__(self):
         super().__init__()
@@ -202,6 +390,9 @@ class QImageViewer(QMainWindow):
         tabs.setTabPosition(QTabWidget.West)
         tabs.setMovable(True)
 
+        cam_widget = CameraWidget(self._camera)
+        tabs.addTab(cam_widget, "Camera")
+
         for n, color in enumerate(["red", "green", "blue", "yellow"]):
             tabs.addTab(QLabel(color), color)
 
@@ -223,9 +414,12 @@ class QImageViewer(QMainWindow):
 
     def finish_render_thread(self):
 
-        if self._thread:
+        if self._thread is not None and self._rt is not None:
+            self._rt.terminate = True
             self._thread.exit(0)
+            self._thread.wait(100)
             self._thread.terminate()
+            self._thread.wait()
             print("thread exit!")
             # self._thread.quit()
             del self._rt
@@ -241,7 +435,7 @@ class QImageViewer(QMainWindow):
         # self._pool.start(self._rt)
 
         self._thread = QThread()
-        self._rt = RendererThread(self.imageLabel, file_name)
+        self._rt = RendererThread(self.imageLabel, file_name, self._camera)
         self._rt.moveToThread(self._thread)
         self._thread.started.connect(self._rt.run)
 
