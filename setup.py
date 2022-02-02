@@ -18,7 +18,6 @@ setup(
     python_requires=">=3.6",
     classifiers=[
         "Operating System :: OS Independent",
-        "Topic :: Games/Entertainment",
         "Topic :: Multimedia :: Graphics",
         "Topic :: Multimedia :: Graphics :: 3D Rendering",
         "Topic :: Scientific/Engineering :: Visualization",
