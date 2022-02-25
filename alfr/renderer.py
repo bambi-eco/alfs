@@ -15,7 +15,7 @@ def plane(size):
     """
     u = np.repeat(np.linspace(-size, size, 2), 2)
     v = np.tile([-size, size], 2)
-    w = np.ones(4) * -15
+    w = np.ones(4) * -9
     return np.concatenate([np.dstack([u, v, w]), np.dstack([v, u, w])])
 
 
@@ -25,27 +25,32 @@ class Renderer:
         resolution: tuple = (512, 512),
         ctx: moderngl.Context = ContextManager.get_default_context(),
     ):
-        # g.ctx
-        # if g.ctx is None:
-        #    g.ctx = moderngl.create_context(standalone=True)
+
         self._ctx = ctx
-
-        # Todo: test on Colab and so forth
-
         self._program = self._setup_alfr_program(self._ctx)
         self._fbo = self._ctx.simple_framebuffer(resolution, components=4)
 
-        vbo = self._ctx.buffer(plane(15).astype("f4"))
+        vbo = self._ctx.buffer(plane(100).astype("f4"))
         # Indices are given to specify the order of drawing
         indices = np.array([0, 1, 2, 2, 3, 1], dtype="i4")
         ibo = self._ctx.buffer(indices)
         vao_content = [
             # 3 floats are assigned to the 'in' variable named 'in_vert' in the shader code
-            (vbo, "3f", "in_vert")
+            (vbo, "3f", "in_position")
         ]
         self._vao = self._ctx.vertex_array(self._program, vao_content, ibo)
 
     def _prepare_projection(self, vcam: Camera, focus=None, resolution: tuple = None):
+        """Prepare the renderer for projection a shot.
+
+        Activate the framebuffer, clear it and set the matrices for the shader program.
+
+        Args:
+            vcam (Camera): the virtual camera
+            focus (float): the focus object
+            resolution (tuple): the resolution of the image
+
+        """
 
         if resolution is not None and resolution != self._fbo.size:
             self.fbo = self._ctx.simple_framebuffer(resolution, components=4)
@@ -54,21 +59,34 @@ class Renderer:
         self._ctx.clear(0.0, 0.0, 0.0)
         self._ctx.enable(moderngl.DEPTH_TEST)
 
-        modelMat = self._program["modelMatrix"]
-        viewMat = self._program["viewMatrix"]
-        projMat = self._program["projectionMatrix"]
+        modelMat = self._program["m_model"]
+        viewMat = self._program["m_cam"]
+        projMat = self._program["m_proj"]
 
         projMat.write(vcam.projection_matrix.astype("f4"))
         viewMat.write(vcam.view_matrix.astype("f4"))
         modelMat.write((Matrix44.identity()).astype("f4"))  # Todo!
 
     def _img_from_fbo(self) -> np.ndarray:
+        """Get the image from the framebuffer.
+
+        Returns:
+            np.ndarray: the image
+        """
         # opencv image
         # see https://stackoverflow.com/questions/65056007/numpy-array-to-and-from-moderngl-buffer-open-and-save-with-cv2
         raw = self.fbo.read(components=4, dtype="f1")
         return np.frombuffer(raw, dtype="uint8").reshape((*self.fbo.size[1::-1], 4))
 
-    def _postpro_img(self, img):
+    def _postpro_img(self, img: np.ndarray) -> np.ndarray:
+        """Postprocess an image such that it is compatible with opencv
+
+        Args:
+            img (np.ndarray): the image to process
+
+        Returns:
+            np.ndarray: processed image
+        """
         # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # convert to RGB, opencv uses BGR
         img = np.flip(img, 0).copy(order="C")  # flip image vertically
         # flip red and blue channels; cvtColor removes alpha channel so do it manually!
@@ -80,8 +98,16 @@ class Renderer:
     def project_shot(
         self, shot: Shot, vcam: Camera, focus=None, resolution=None
     ) -> np.ndarray:
-        """
-        Project the given camera into a given shot.
+        """Project the given camera into a given shot.
+
+        Args:
+            shot (Shot): the shot to project
+            vcam (Camera): the virtual camera
+            focus (float): the focus object
+            resolution (tuple): the resolution of the image
+
+        Returns:
+            np.ndarray: the projected image
         """
 
         self._prepare_projection(vcam, focus, resolution)
@@ -101,8 +127,17 @@ class Renderer:
         resolution=None,
         postprocess=True,
     ) -> List[np.ndarray]:
-        """
-        Project multiple shots into images.
+        """Project multiple shots into images.
+
+        Args:
+            shots (List[Shot]): the shots to project
+            vcam (Camera): the virtual camera
+            focus (float): the focus object
+            resolution (tuple): the resolution of the image
+            postprocess (bool): whether to postprocess the image
+
+        Returns:
+            List[np.ndarray]: the projected images
         """
         projections = []
         self._prepare_projection(vcam, focus, resolution)
@@ -120,8 +155,16 @@ class Renderer:
     def integrate(
         self, shots: List[Shot], vcam: Camera, focus=None, resolution: tuple = None
     ) -> np.ndarray:
-        """
-        Integrate multiple shots into a single image.
+        """Integrate multiple shots into a single image.
+
+        Args:
+            shots (List[Shot]): the shots to integrate
+            vcam (Camera): the virtual camera
+            focus (float): the focus object
+            resolution (tuple): the resolution of the image
+
+        Returns:
+            np.ndarray: the integrated image
         """
         projections = self.project_multiple_shots(
             shots, vcam, focus, resolution, postprocess=False
@@ -135,6 +178,7 @@ class Renderer:
 
     @property
     def fbo(self):
+        """Get or Set the internal framebuffer used by the renderer."""
         return self._fbo
 
     @fbo.setter
@@ -143,31 +187,34 @@ class Renderer:
 
     @property
     def program(self):
+        """The internal shader program used by the renderer."""
         return self._program
 
-    def _setup_alfr_program(self, ctx: moderngl.Context) -> moderngl.Program:
+    @staticmethod
+    def _setup_alfr_program(ctx: moderngl.Context) -> moderngl.Program:
+        """Setup the shader program to be used by the renderer."""
         return ctx.program(
             vertex_shader="""
                     #version 330
 
-                    // model view projection matrix of the model (virtual camera)
-                    uniform mat4 modelMatrix;
-                    uniform mat4 viewMatrix;
-                    uniform mat4 projectionMatrix;
+                    // model view projection matrices of the focus surface (virtual camera)
+                    uniform mat4 m_proj;
+                    uniform mat4 m_model;
+                    uniform mat4 m_cam;
 
                     // view and camera/projection matrix for one shot:
-                    uniform mat4 shotViewMatrix;
-                    uniform mat4 shotProjectionMatrix;
+                    uniform mat4 m_shot_cam;
+                    uniform mat4 m_shot_proj;
 
-                    in vec3 in_vert;
+                    in vec3 in_position;
                     out vec4 wpos;
                     out vec4 shotUV;
 
                     void main() {
-                        wpos = modelMatrix * vec4(in_vert, 1.0);
-                        gl_Position = projectionMatrix * viewMatrix * wpos;
+                        wpos = m_model * vec4(in_position, 1.0);
+                        gl_Position = m_proj * m_cam * wpos;
 
-                        shotUV = shotProjectionMatrix * shotViewMatrix * wpos;
+                        shotUV = m_shot_proj * m_shot_cam * wpos;
                     }
                 """,
             fragment_shader="""
@@ -188,6 +235,7 @@ class Renderer:
                             discard; // throw away the fragment 
                             color = vec4(0.0, 0.0, 0.0, 0.0);
                         } else {
+                            // DEBUG: color = vec4(1.0, 1.0, 0.0, 1.0);
                             color = vec4(texture(shotTexture, uv.xy).rgb, 1.0);
                         }
                     }

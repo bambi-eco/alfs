@@ -88,6 +88,9 @@ class Camera:
         )
 
 
+# Todo:  look at implementation in moderngl-window!!!
+
+
 class ControllableCamera(Camera):
     def __init__(self, ratio: float = 1.0):
         super().__init__(

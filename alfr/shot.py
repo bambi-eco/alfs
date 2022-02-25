@@ -3,59 +3,10 @@ import cv2
 import moderngl
 from alfr.globals import ContextManager
 from alfr.camera import Camera
-from pyrr import Matrix44, Quaternion, Vector3, vector
+from pyrr import Matrix44, Matrix33, Quaternion, Vector3, vector
 import json
 import os
 from typing import Union
-
-
-def load_shots_from_json(
-    json_file: str,
-    fovy: float = 60.0,
-    ctx: moderngl.Context = ContextManager.get_default_context(),
-):
-    """
-    Loads shots from a json file.
-    """
-    shots = []
-    with open(json_file, "r") as f:
-        data = json.load(f)
-
-        json_dir = os.path.dirname(os.path.realpath(f.name))
-
-        if "images" in data.keys():
-            for image in data["images"]:
-                file, pos, rot, fov = get_file_pos_rot(image)
-                shot = Shot(
-                    os.path.join(json_dir, file),
-                    Vector3(pos),
-                    Quaternion(rot),
-                    fov if fov is not None else fovy,
-                    shot_aspect_ratio=1.0,
-                    ctx=ctx,
-                )
-                shots.append(shot)
-
-    return shots
-
-
-def get_from_dict(d: dict, keys: list):
-    for key in keys:
-        if key in d.keys():
-            return d[key]
-    return None
-
-
-def get_file_pos_rot(images: dict):
-    file = get_from_dict(images, ["imagefile", "file", "image"])
-    pos = get_from_dict(images, ["location", "pos", "loc"])
-    rot = get_from_dict(images, ["rotation", "rot", "quaternion"])
-    fov = get_from_dict(images, ["fovy", "fov", "fieldofview"])
-
-    if file is None or pos is None or rot is None:
-        raise Exception("Not all keys found in images dict!")
-
-    return file, pos, rot, fov
 
 
 class Shot(Camera):
@@ -83,14 +34,20 @@ class Shot(Camera):
 
         # one perspective of the light field
         # self.texture = window.load_texture_2d(shot_filename)
-
+        self._filename = None
         if isinstance(shot_filename, str):
             img = self._load_image(shot_filename)
+            self._filename = shot_filename
         elif isinstance(shot_filename, np.ndarray):
             img = shot_filename
         else:
             raise Exception("Unknown type for {shot_filename}")
         self.texture = ctx.texture(img.shape[1::-1], img.shape[2], img)
+        self._img = img  # opencv image
+
+    @property
+    def image_file(self):
+        return self._filename
 
     def _load_image(self, texture_filename) -> np.ndarray:
         img = cv2.imread(texture_filename)
@@ -104,9 +61,6 @@ class Shot(Camera):
         """
         self.texture.use(0)
 
-        # get uniforms from shader program
-        self.shotViewMat = renderer.program["shotViewMatrix"]
-        self.shotProjMat = renderer.program["shotProjectionMatrix"]
-
-        self.shotProjMat.write(self.projection_matrix.astype("f4"))
-        self.shotViewMat.write(self.view_matrix.astype("f4"))
+        # get uniforms from shader program and set them
+        renderer.program["m_shot_proj"].write(self.projection_matrix.astype("f4"))
+        renderer.program["m_shot_cam"].write(self.view_matrix.astype("f4"))
