@@ -104,17 +104,17 @@ def load_shots_from_legacy_json(
             for image in data["images"]:
                 file = get_from_dict(image, ["imagefile", "file", "image"])
                 M_3x4: list = get_from_dict(image, ["M3x4"])
-                weird_R = Matrix33([M_3x4[0][:3], M_3x4[1][:3], M_3x4[2][:3]])
-                weird_t = Vector3(np.asarray(M_3x4)[:, 3])
+                legacy_M3x4 = Matrix44(
+                    [M_3x4[0][:4], M_3x4[1][:4], M_3x4[2][:4], [0.0, 0.0, 0.0, 1.0]]
+                )
 
-                R: Matrix33 = flip_yz_matrix @ weird_R.transpose() @ flip_yz_matrix
-                rot = R.quaternion
+                scale, rotate, translate = legacy_M3x4.T.decompose()
 
-                pos = -R @ weird_t @ flip_yz_matrix
+                pos = -(rotate * translate)
 
                 # for some reason we need to modify the quaternion here.
                 # Colmap has a weird format???
-                qt = rot
+                qt = rotate
                 _q = Quaternion(np.hstack((qt.w, qt.z, -qt.y, qt.x)))
                 # Todo: verify why we need this!!
 
@@ -193,6 +193,7 @@ def load_shots_from_colmap(
 
         # for some reason we need to modify the quaternion here.
         # Colmap has a weird format???
+        # probably related to image convention 0,0 coordinate at left top corner vs left bottom corner
         qt = _R.quaternion
         _q = Quaternion(np.hstack((qt.w, qt.z, -qt.y, qt.x)))
         # Todo: verify why we need this!!

@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 import moderngl
 import alfr
-from pyrr import Matrix44, Quaternion, Vector3, vector
+from pyrr import Matrix44, Matrix33, Quaternion, Vector3, vector
 import cv2
 import time
 
@@ -19,6 +19,53 @@ camera = alfr.Camera(position=[0, 1, 0], camera_front=[0, 0, -1], camera_up=[0, 
 #    r"data\debug_scene\legacy_poses.json", fovy=60.0
 # )
 
+# DEBUG stuff below!
+""" 
+legacy_M3x4 = Matrix44(
+    [
+        [
+            0.8414480256053043,
+            0.5297529088119239,
+            0.10642841070013722,
+            0.29775899999999996,
+        ],
+        [
+            -0.540233517423641,
+            0.8209315646434936,
+            0.18498387676440179,
+            -1.4559000000000003,
+        ],
+        [
+            0.01062533062695912,
+            -0.21315051868576879,
+            0.9769615901748945,
+            1.7413599999999996,
+        ],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+)
+
+# the legacy matrix needs to get
+			"location": [
+				-1.055577093464869,
+				1.4086274648136757,
+				-1.463613865336707
+			],
+			"rotation": [
+				0.9538528959135507,
+				0.2804379693980146,
+				0.02510949725999845,
+				0.10434898861321725
+			],
+            
+scale, rotate, translate = legacy_M3x4.T.decompose()
+
+qt = rotate
+_q = Quaternion(np.hstack((qt.w, qt.z, -qt.y, qt.x)))
+print("rotation quaternion: ", _q)
+pos = -(rotate * translate)
+print("position: ", pos)
+"""
 
 shots = alfr.load_shots_from_legacy_json(
     r"data\colmap_scene\F5\RGB_rect\RGB_poses.json", fovy=50.81543  # f-factor of .95
