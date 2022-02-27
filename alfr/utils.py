@@ -129,36 +129,70 @@ def load_shots_from_legacy_json(
 def load_shots_from_colmap(
     model_folder: str,
     image_folder: str,
-    fovy: float = 60.0,
+    fovy: float = None,
     ctx: moderngl.Context = ContextManager.get_default_context(),
 ):
     """
     Loads shots from a colmap.
     """
 
-    cameras, images, points3D = read_model(model_folder)
+    cameras, images, points3D = read_model(model_folder)  # read the colmap model
 
     # Todo: finish this!
 
-    # pyrr.Quaternion format is x,y,z,w while colmap is w,x,y,z!!!
-
     shots = []
-    with open(json_file, "r") as f:
-        data = json.load(f)
+    for img in images.values():
+        # look into https://github.com/colmap/colmap/blob/dev/scripts/python/visualize_model.py
+        # to see how to get the camera parameters
 
-        json_dir = os.path.dirname(os.path.realpath(f.name))
+        # rotation
+        q = Quaternion((img.qvec[1], img.qvec[2], img.qvec[3], img.qvec[0]))
+        # pyrr.Quaternion format is x,y,z,w while colmap uses w,x,y,z!!!
+        R = Matrix33.from_quaternion(q)
 
-        if "images" in data.keys():
-            for image in data["images"]:
-                file, pos, rot, fov = get_file_pos_rot(image)
-                shot = Shot(
-                    os.path.join(json_dir, file),
-                    Vector3(pos),
-                    Quaternion(rot),
-                    fov if fov is not None else fovy,
-                    shot_aspect_ratio=1.0,
-                    ctx=ctx,
-                )
-                shots.append(shot)
+        # translation
+        t = Vector3(img.tvec)
+
+        # invert
+        t = -R.T @ t
+        _R = Matrix33(R.T)
+
+        # intrinsics
+        cam = cameras[img.camera_id]
+
+        if cam.model in ("SIMPLE_PINHOLE", "SIMPLE_RADIAL", "RADIAL"):
+            fx = fy = cam.params[0]
+            cx = cam.params[1]
+            cy = cam.params[2]
+        elif cam.model in ("PINHOLE", "OPENCV", "OPENCV_FISHEYE"):
+            fx = cam.params[0]
+            fy = cam.params[1]
+            cx = cam.params[2]
+            cy = cam.params[3]
+        else:
+            raise Exception("Camera model not supported")
+
+        # intrinsics
+        K = np.identity(3)
+        K[0, 0] = fx
+        K[1, 1] = fy
+        K[0, 2] = cx
+        K[1, 2] = cy
+
+        # field of view in degrees
+        cam_fovy = np.degrees(
+            2 * np.arctan(cam.height / (2 * fy))
+        )  # Todo: check if width or height is correct here!
+        print("fovy:", cam_fovy)
+
+        shot = Shot(
+            os.path.join(image_folder, img.name),
+            Vector3(t),
+            _R.quaternion,
+            fovy if fovy is not None else cam_fovy,
+            shot_aspect_ratio=cam.width / cam.height,
+            ctx=ctx,
+        )
+        shots.append(shot)
 
     return shots

@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 import moderngl
 import alfr
-from pyrr import Matrix44, Quaternion, Vector3, vector
+from pyrr import Matrix44, Matrix33, Quaternion, Vector3, vector
 import cv2
 import time
 
@@ -14,14 +14,30 @@ import time
 renderer = alfr.Renderer((512, 512))
 camera = alfr.Camera(position=[0, 1, 0], camera_front=[0, 0, -1], camera_up=[0, -1, 0])
 
-# load perspectives of the light field
-shots = alfr.load_shots_from_json(r"data\debug_scene\blender_poses.json", fovy=60.0)
 
-alfr.export_shots_to_json(shots, r"data\debug_scene\exportet_poses.json")
-shots = alfr.load_shots_from_json(r"data\debug_scene\exportet_poses.json", fovy=60.0)
+# Todo!!!
+
+# load perspectives of the light field ** F5 **
+# shots = alfr.load_shots_from_colmap(
+#    r"data/colmap_scene/F5/poses/COLMAP",
+#    r"data\colmap_scene\F5\RGB_renamed",
+#    fovy=50.81543,
+# )
+# alfr.export_shots_to_json(shots, r"data\colmap_scene\F5\RGB_renamed\new_poses.json")
+
+shots = alfr.load_shots_from_colmap(
+    r".\data\debug_reconstruction\COLMAP",
+    r".\data\debug_reconstruction\images",
+    fovy=60.0,
+)
+
+for i, shot in enumerate(shots):
+    print(f"camera {i} pos: {shot.position}")
+    print(f"camera {i} quaternion: {shot.rotation}")
+    print(f"camera {i} R: {Matrix33(shot.rotation)}")
 
 
-vcam = camera
+vcam = shots[0]
 
 for i, shot in enumerate(shots):
 

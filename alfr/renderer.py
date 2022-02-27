@@ -15,7 +15,7 @@ def plane(size):
     """
     u = np.repeat(np.linspace(-size, size, 2), 2)
     v = np.tile([-size, size], 2)
-    w = np.ones(4) * -9
+    w = np.ones(4) * -22
     return np.concatenate([np.dstack([u, v, w]), np.dstack([v, u, w])])
 
 

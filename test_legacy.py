@@ -14,14 +14,20 @@ import time
 renderer = alfr.Renderer((512, 512))
 camera = alfr.Camera(position=[0, 1, 0], camera_front=[0, 0, -1], camera_up=[0, -1, 0])
 
-# load perspectives of the light field
-shots = alfr.load_shots_from_json(r"data\debug_scene\blender_poses.json", fovy=60.0)
+# load perspectives of the light field (for the blender debug scene)
+# shots = alfr.load_shots_from_legacy_json(
+#    r"data\debug_scene\legacy_poses.json", fovy=60.0
+# )
 
-alfr.export_shots_to_json(shots, r"data\debug_scene\exportet_poses.json")
-shots = alfr.load_shots_from_json(r"data\debug_scene\exportet_poses.json", fovy=60.0)
+
+shots = alfr.load_shots_from_legacy_json(
+    r"data\colmap_scene\F5\RGB_rect\RGB_poses.json", fovy=50.81543  # f-factor of .95
+)
+
+alfr.export_shots_to_json(shots, r"data\colmap_scene\F5\RGB_rect\new_poses.json")
 
 
-vcam = camera
+vcam = shots[0]
 
 for i, shot in enumerate(shots):
 
