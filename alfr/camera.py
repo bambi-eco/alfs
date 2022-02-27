@@ -29,7 +29,7 @@ class Camera:
         self._rotation = Quaternion(quaternion)
         if camera_front is None or camera_up is None:
             self._camera_front = self.rotation * Vector3([0, 0, -1])
-            print(f"camera_front: {self._camera_front}")
+            # print(f"camera_front: {self._camera_front}")
             self._camera_up = self.rotation * Vector3([0, 1, 0])
         else:
             # use front and up vector to create a view matrix!

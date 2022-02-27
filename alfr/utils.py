@@ -112,10 +112,16 @@ def load_shots_from_legacy_json(
 
                 pos = -R @ weird_t @ flip_yz_matrix
 
+                # for some reason we need to modify the quaternion here.
+                # Colmap has a weird format???
+                qt = rot
+                _q = Quaternion(np.hstack((qt.w, qt.z, -qt.y, qt.x)))
+                # Todo: verify why we need this!!
+
                 shot = Shot(
                     os.path.join(json_dir, file),
                     Vector3(pos),
-                    Quaternion(rot),
+                    _q,
                     fovy,
                     shot_aspect_ratio=1.0,
                     ctx=ctx,
@@ -183,12 +189,18 @@ def load_shots_from_colmap(
         cam_fovy = np.degrees(
             2 * np.arctan(cam.height / (2 * fy))
         )  # Todo: check if width or height is correct here!
-        print("fovy:", cam_fovy)
+        # print("fovy:", cam_fovy)
+
+        # for some reason we need to modify the quaternion here.
+        # Colmap has a weird format???
+        qt = _R.quaternion
+        _q = Quaternion(np.hstack((qt.w, qt.z, -qt.y, qt.x)))
+        # Todo: verify why we need this!!
 
         shot = Shot(
             os.path.join(image_folder, img.name),
             Vector3(t),
-            _R.quaternion,
+            _q,
             fovy if fovy is not None else cam_fovy,
             shot_aspect_ratio=cam.width / cam.height,
             ctx=ctx,

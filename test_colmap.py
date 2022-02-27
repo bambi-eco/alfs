@@ -17,13 +17,19 @@ camera = alfr.Camera(position=[0, 1, 0], camera_front=[0, 0, -1], camera_up=[0, 
 
 # Todo!!!
 
-# load perspectives of the light field ** F5 **
-# shots = alfr.load_shots_from_colmap(
-#    r"data/colmap_scene/F5/poses/COLMAP",
-#    r"data\colmap_scene\F5\RGB_renamed",
-#    fovy=50.81543,
-# )
-# alfr.export_shots_to_json(shots, r"data\colmap_scene\F5\RGB_renamed\new_poses.json")
+# DEBUGGING with colmap_debug scene!!!
+"""
+# Matrix from MeshLab
+m = Matrix33(
+    [
+        [0.999838, 0.01087, -0.0143608],
+        [0.0108437, -0.999939, -0.00190539],
+        [-0.0143807, 0.00174936, -0.999895],
+    ]
+)
+print("test Matrix ", m)
+print("its quaternion ", m.quaternion)
+# Somehow the quaternions are turned/flipped in a weird way!!!
 
 shots = alfr.load_shots_from_colmap(
     r".\data\debug_reconstruction\COLMAP",
@@ -35,6 +41,16 @@ for i, shot in enumerate(shots):
     print(f"camera {i} pos: {shot.position}")
     print(f"camera {i} quaternion: {shot.rotation}")
     print(f"camera {i} R: {Matrix33(shot.rotation)}")
+"""
+
+
+# load perspectives of the light field ** F5 **
+shots = alfr.load_shots_from_colmap(
+    r"data/colmap_scene/F5/poses/COLMAP",
+    r"data\colmap_scene\F5\RGB_renamed",
+    fovy=50.81543,
+)
+alfr.export_shots_to_json(shots, r"data\colmap_scene\F5\RGB_renamed\new_poses.json")
 
 
 vcam = shots[0]
